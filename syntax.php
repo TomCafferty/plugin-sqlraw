@@ -26,13 +26,18 @@ function propertyRaw($prop, $xml) {
     return FALSE;
 }
    
-function scrapeTable($url, $startMarker, $dbfile) {
+function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace, $restrictNames) {
     $csv_data = '';
     $raw = file_get_contents($url);
     $newlines = array("\t","\n","\r","\x20\x20","\0","\x0B");
+    $spaceCodes = array("&nbsp;");
     $numberStuff = array(",","+");
+
     $numbs = array(",",".","+","-","0","1","2","3","4","5","6","7","8","9");
-    $content = str_replace($newlines, "", html_entity_decode($raw));
+    $content = str_replace($newlines, "", $raw);
+    $content = str_replace($spaceCodes, "_", ($content));
+    $content = preg_replace("/&#?[a-z0-9]+;/i","",$content);
+
     if ($dbfile != '') 
       $debug = TRUE;
     else
@@ -54,10 +59,13 @@ function scrapeTable($url, $startMarker, $dbfile) {
     $row_index=0;
     $numHeadings = 0;
     foreach ($rows[0] as $row){
-        if ((strpos($row,'<th')===false))
+        if (strpos($row,'<th')===false)  
           preg_match_all("|<td(.*)</td>|U",$row,$cells);
-        else
+        else {
+          if ($restrictNames) $row = str_replace($specialChars, $specialReplace, $row);
 		  $numHeadings = preg_match_all("|<t(.*)</t(.*)>|U",$row,$cells);
+        }
+
     	if ($row_index == 0) 
     	  $numCols = $numHeadings;
 		  
@@ -133,7 +141,7 @@ function scrapeTable($url, $startMarker, $dbfile) {
         return $csvline;
     }
    
-    function sqlRaw__handleLink($url, $source='csvfile', $startMarker, $dbfile){
+    function sqlRaw__handleLink($url, $source='csvfile', $startMarker, $dbfile, $disallow, $use, $restrictNames){
         global $ID;
         $delim = ',';
         $opt = array('content' => '');
@@ -150,7 +158,7 @@ function scrapeTable($url, $startMarker, $dbfile) {
             }
             $content =& $opt['content'];
         } elseif ($source == 'scrapeUrl') {
-            $content =& scrapeTable($url, $startMarker, $dbfile);
+            $content =& scrapeTable($url, $startMarker, $dbfile, $disallow, $use, $restrictNames);
         } else {
             printf("No valid source url provided.\n");
             return false;
@@ -249,7 +257,7 @@ function scrapeTable($url, $startMarker, $dbfile) {
         $query .= 'PRIMARY KEY (id)) DEFAULT CHARACTER SET \'utf8\'';
         $result =& $database->query ($query);
         if (DB::isError ($result)) {
-            printf("CREATE TABLE failed for query ". $query . ' the error: ' . $result->getMessage () . "\n");
+            print("CREATE TABLE failed for query: ". $query . " the error: " . $result->getMessage() . "\n");
             return false;
         }
         
@@ -386,7 +394,10 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 					array_push($this->databases, $db);
 				}
 				$this->datalink = $data['link'];								
-    			$theResult = sqlRaw__handleLink($data['link'], $this->source, $this->startMarker, $debugfile);
+				$disallow = $this->getConf('mysqlDisallow');
+				$use = $this->getConf('mysqlReplace');
+				$restrictNames = $this->getConf('restrict_names');
+    			$theResult = sqlRaw__handleLink($data['link'], $this->source, $this->startMarker, $debugfile, $disallow, $use, $restrictNames);
     			if ($theResult != "") {
         			$db =& array_pop($this->databases);
         			if (!empty($db)) {
