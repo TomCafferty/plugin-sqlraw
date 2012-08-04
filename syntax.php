@@ -59,10 +59,10 @@ function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace
     $row_index=0;
     $numHeadings = 0;
     foreach ($rows[0] as $row){
+        if ($restrictNames && ($row_index==0)) $row = str_replace($specialChars, $specialReplace, $row);
         if (strpos($row,'<th')===false)  
           preg_match_all("|<td(.*)</td>|U",$row,$cells);
         else {
-          if ($restrictNames) $row = str_replace($specialChars, $specialReplace, $row);
 		  $numHeadings = preg_match_all("|<t(.*)</t(.*)>|U",$row,$cells);
         }
 
