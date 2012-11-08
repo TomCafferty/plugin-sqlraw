@@ -25,7 +25,7 @@ function propertyRaw($prop, $xml) {
 	}
     return FALSE;
 }
-   
+
 function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace, $restrictNames) {
     $csv_data = '';
     $raw = file_get_contents($url);
@@ -147,11 +147,27 @@ function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace
         $opt = array('content' => '');
 
         if ($source == 'csvfile') {
-            // load file data
-            $curl = new Curl_HTTP_Client();
-            $useragent = "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)";
-            $curl->set_user_agent($useragent);
-            $opt['content'] = $curl->fetch_url($url);
+            if(preg_match('/^(http|https)?:\/\//i',$url)){
+                // load file data
+                $curl = new Curl_HTTP_Client();
+                $useragent = "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)";
+                $curl->set_user_agent($useragent);
+                $opt['content'] = $curl->fetch_url($url);
+            } else {
+                $opt['file'] = cleanID($url);
+                if(!strlen(getNS($opt['file'])))
+                      $opt['file'] = $INFO['namespace'].':'.$opt['file'];
+                $renderer->info['cache'] = false; //no caching
+                if (auth_quickaclcheck(getNS($opt['file']).':*') < AUTH_READ) {
+                    $renderer->cdata('Access denied to CSV data');
+                    return true;
+                } else {
+                    $file = mediaFN($opt['file']);
+                    $opt['content'] = io_readFile($file);
+                    // if not valid UTF-8 is given we assume ISO-8859-1
+                    if(!utf8_check($opt['content'])) $opt['content'] = utf8_encode($opt['content']);
+                }
+            }
             if(!$opt['content']){
                 printf("Failed to fetch remote CSV data.\n");
                 return true;
@@ -190,6 +206,7 @@ function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace
         foreach($rows as $fields) {
     	  if ($row === 1) {
     		foreach ($fields as $field) {
+        		if ($restrictNames) $field = str_replace($disallow, $use, $field);
     			$headers[] = strtolower(str_ireplace(' ', '_', $field));
     		}
 		  } else {
