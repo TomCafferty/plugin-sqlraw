@@ -6,13 +6,13 @@
  * @author     Slim Amamou <slim.amamou@gmail.com>
  * @author     Tom Cafferty <tcafferty@glocalfocal.com>
  */
- 
 if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../').'/');
 if(!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN',DOKU_INC.'lib/plugins/');
 require_once(DOKU_PLUGIN.'syntax.php');
 require_once(DOKU_INC.'inc/parserutils.php');
 require_once('DB.php');
 require_once( DOKU_INC.'lib/plugins/sqlraw/curl_http_client.php');
+require_once('wikiPage.php');
     
 function propertyRaw($prop, $xml) {
 	$pattern = $prop ."='([^']*)'";
@@ -28,7 +28,13 @@ function propertyRaw($prop, $xml) {
 
 function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace, $restrictNames) {
     $csv_data = '';
-    $raw = file_get_contents($url);
+    if(preg_match('/^(http|https)?:\/\//i',$url)){
+        $raw = file_get_contents($url);
+    } else {
+        $raw = pullInWikiPage($url);
+        if ($raw == false) 
+            return false;
+    }
     $newlines = array("\t","\n","\r","\x20\x20","\0","\x0B");
     $spaceCodes = array("&nbsp;");
     $numberStuff = array(",","+");
@@ -145,7 +151,6 @@ function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace
         global $ID;
         $delim = ',';
         $opt = array('content' => '');
-
         if ($source == 'csvfile') {
             if(preg_match('/^(http|https)?:\/\//i',$url)){
                 // load file data
@@ -175,8 +180,12 @@ function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace
             $content =& $opt['content'];
         } elseif ($source == 'scrapeUrl') {
             $content =& scrapeTable($url, $startMarker, $dbfile, $disallow, $use, $restrictNames);
+            if ($content == false) {
+                msg("You do not have permission to access the requested page of ".$url."\n",-1);
+                return false;
+            }
         } else {
-            printf("No valid source url provided.\n");
+            msg("No valid source url provided.\n");
             return false;
         }
 
@@ -261,6 +270,18 @@ function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace
         $out[] = $word;
         return $out;
     }
+    
+    function sqlRaw__drop_temp_db($database) {
+        $table = 'temptable';     
+        // Drop the table      
+        $query = 'DROP TEMPORARY TABLE IF EXISTS '.$table;
+        $result =& $database->query ($query);
+        if (DB::isError ($result)) {
+			$renderer->doc .= '<div class="error">DROP TABLE failed for query: '. $query .'the error: '. $result->getMessage() .'</div>';
+            return false;
+        }
+        return true;
+    }
        
     function sqlRaw__create_temp_db($database,$headers,$rows,$max_field_lengths) {
         $badChars = array(".", ":", "-");
@@ -274,7 +295,7 @@ function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace
         $query .= 'PRIMARY KEY (id)) DEFAULT CHARACTER SET \'utf8\'';
         $result =& $database->query ($query);
         if (DB::isError ($result)) {
-            print("CREATE TABLE failed for query: ". $query . " the error: " . $result->getMessage() . "\n");
+			$renderer->doc .= '<div class="error">CREATE TABLE failed for query: '. $query .'the error: '. $result->getMessage() .'</div>';
             return false;
         }
         
@@ -404,7 +425,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 				$db =& DB::connect($tempdb);
 				if (DB::isError($db)) {
 					$error = $db->getMessage();
-					$renderer->doc .= '<div class="error">'. $error .'</div>';
+					$renderer->doc .= '<div class="error"> The database error is '. $error .'</div>';
 					return TRUE;
 				}
 				else {
@@ -469,6 +490,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 									$renderer->doc .= "</tr>\n";
 								}
 								$renderer->doc .= '</tbody></table>';
+								sqlRaw__drop_temp_db ($db);
 							} else {
 								foreach ($result as $row) {
 									$renderer->doc .= '<table '.$id_string.'class="'.$this->table_class.'">';
@@ -483,6 +505,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 										$renderer->doc .= "</tr>\n";
 									}
 									$renderer->doc .= '</tbody></table>';
+								    sqlRaw__drop_temp_db ($db);
 								}
 							}
 						}
