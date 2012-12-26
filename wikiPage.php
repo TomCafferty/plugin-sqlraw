@@ -6,52 +6,42 @@
  * @author     Tom Cafferty <tcafferty@glocalfocal.com>
  */
  
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../').'/');
+if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../../').'/');
 if(!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN',DOKU_INC.'lib/plugins/');
 require_once(DOKU_PLUGIN.'syntax.php');
 require_once(DOKU_INC.'inc/parserutils.php');
 
 function pullInWikiPage ($dokuPageId) {
 
-if ($_SERVER['SERVER_NAME'] == 'localhost') {
-    define('DOC_ROOT_OUT', $_SERVER['DOCUMENT_ROOT'] . '/glocalfocalwiki');
-} else {
-    define('DOC_ROOT_OUT', $_SERVER['DOCUMENT_ROOT']);
-} 
-$link_prefix = DOKU_URL . 'dokuwiki_integrated/doc.php?id=';
-
-$dokuwiki_folder =  DOC_ROOT_OUT;
 if (auth_quickaclcheck($dokuPageId) == 0)
   return false;
 
 /* Initialization */
-
-define('DOKU_PATH', $dokuwiki_folder);
-define('DOKU_INC', DOKU_PATH . '/');
-define('DOKU_CONF', DOKU_PATH . '/conf/');
+define('DOKU_INC', DOKU_INC . '/');
+define('DOKU_CONF', DOKU_INC . '/conf/');
 
 global $conf;
-$conf['datadir'] = DOKU_PATH . '/data';
-$conf['cachedir'] = DOKU_PATH . '/data/cache';
-$conf['mediadir'] = DOKU_PATH . '/data/media';
-$conf['metadir'] = DOKU_PATH . '/data/meta';
+$conf['datadir'] = DOKU_INC . '/data';
+$conf['cachedir'] = DOKU_INC . '/data/cache';
+$conf['mediadir'] = DOKU_INC . '/data/media';
+$conf['metadir'] = DOKU_INC . '/data/meta';
 $conf['maxseclevel'] = 0;	//links to edit sub-content
 $conf['target']['extern'] = '';
 
 unset($_REQUEST['purge']); 
 
-require_once (DOKU_PATH . '/inc/parser/parser.php');
-require_once DOKU_PATH . '/inc/events.php';
-require_once DOKU_PATH . '/inc/mail.php';
-require_once DOKU_PATH . '/inc/cache.php';
+require_once (DOKU_INC . '/inc/parser/parser.php');
+require_once DOKU_INC . '/inc/events.php';
+require_once DOKU_INC . '/inc/mail.php';
+require_once DOKU_INC . '/inc/cache.php';
 
-require_once DOKU_PATH . '/inc/pageutils.php';
-require_once DOKU_PATH . '/inc/io.php';
-require_once DOKU_PATH . '/inc/confutils.php';
-require_once DOKU_PATH . '/inc/init.php';
+require_once DOKU_INC . '/inc/pageutils.php';
+require_once DOKU_INC . '/inc/io.php';
+require_once DOKU_INC . '/inc/confutils.php';
+require_once DOKU_INC . '/inc/init.php';
 
 // from id parameter, build text file path
-$pagePath = DOKU_PATH . '/data/pages/'. str_replace(":", "/", $dokuPageId) . '.txt';
+$pagePath = DOKU_INC . '/data/pages/'. str_replace(":", "/", $dokuPageId) . '.txt';
 
 // get cached instructions for that file
 $cache = new cache_instructions($dokuPageId, $pagePath); 
@@ -64,11 +54,11 @@ if ($cache->useCache()){
 
 // create renderer
 require_once DOKU_INC . '/inc/parser/xhtml.php';
-require_once DOC_ROOT_OUT . '/dokuwiki_integrated/include/Doku_Renderer_xhtml_export.php';
+require_once DOKU_INC . '/dokuwiki_integrated/include/Doku_Renderer_xhtml_export.php';
 $renderer = new Doku_Renderer_xhtml_export();
 
 // init renderer
-$renderer->set_base_url($link_prefix);
+$renderer->set_base_url(DOKU_URL . 'dokuwiki_integrated/doc.php?id=');
 $renderer->smileys = getSmileys();
 $renderer->notoc();
 

@@ -4,4 +4,4 @@ email  tcafferty@glocalfocal.com
 date   2012-05-27
 name   sqlraw plugin
 desc   Execute SQL query on remote csv data or table data and display the result as a table
-url    http://dokuwiki.org/plugin:rawdatasql
+url    http://www.dokuwiki.org/plugin:sqlraw
