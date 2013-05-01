@@ -179,7 +179,7 @@ function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace
             }
             $content =& $opt['content'];
         } elseif ($source == 'scrapeUrl') {
-            $content =& scrapeTable($url, $startMarker, $dbfile, $disallow, $use, $restrictNames);
+            $content =& scrapeTable(strtolower($url), $startMarker, $dbfile, $disallow, $use, $restrictNames);
             if ($content == false) {
                 msg("You do not have permission to access the requested page of ".$url."\n",-1);
                 return false;
