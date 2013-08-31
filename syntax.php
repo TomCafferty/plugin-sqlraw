@@ -36,7 +36,7 @@ function scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace
             return false;
     }
     $newlines = array("\t","\n","\r","\x20\x20","\0","\x0B");
-    $spaceCodes = array("&nbsp;");
+    $spaceCodes = array("&nbsp;","<br />");
     $numberStuff = array(",","+");
 
     $numbs = array(",",".","+","-","0","1","2","3","4","5","6","7","8","9");
