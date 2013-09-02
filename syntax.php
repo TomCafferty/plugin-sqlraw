@@ -3,6 +3,10 @@
  * Plugin SQLRAW:  executes SQL queries on data not in a database
  * 
  * @license    GPL 2 (http://www.gnu.org/licenses/gpl.html)
+ * @author     Steven Danz <steven-danz@kc.rr.com>
+ * @author     Gert
+ * @author     Andreas Gohr <gohr@cosmocode.de>
+ * @author     Jerry G. Geiger <JerryGeiger@web.de> 
  * @author     Slim Amamou <slim.amamou@gmail.com>
  * @author     Tom Cafferty <tcafferty@glocalfocal.com>
  */
@@ -91,6 +95,9 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 
 		$renderer->info['cache'] = false;
         if($mode == 'xhtml'){		
+            //
+            // Get input parameters and configuration data
+            //	
             if ($data['id'] != FALSE) 
 				$this->tableId = $data['id'];			
             if ($data['source'] != FALSE) 
@@ -114,21 +121,32 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 			$debugfile = $this->getConf('sqlraw_debugfilepath');
 			$tempdb = $this->getConf('sqlraw_tempdb');
 			if ($data['link'] != "") {
+    			//
+    			// First try to connect to the temporary database
+    			//
 				$db =& DB::connect($tempdb);
 				if (DB::isError($db)) {
 					$error = $db->getMessage();
 					$renderer->doc .= '<div class="error"> The database error is '. $error .'</div>';
 					return TRUE;
-				}
-				else {
+				} else {
+    				//
+    				// Good, save that temporary database pointer
+    				//
 					array_push($this->databases, $db);
 				}
 				$this->datalink = $data['link'];								
 				$disallow      = $this->getConf('sqlraw_mysqlDisallow');
 				$use           = $this->getConf('sqlraw_mysqlReplace');
 				$restrictNames = $this->getConf('sqlraw_restrict_names');
+				//
+				// Process the link to get the data
+				//
     			$theResult = $this->_sqlRaw__handleLink($data['link'], $this->source, $this->startMarker, $debugfile, $disallow, $use, $restrictNames);
     			if ($theResult != "") {
+        			//
+        			// Good we have data, now retrieve the temporary database pointer and create a temporary table
+        			//
         			$db =& array_pop($this->databases);
         			if (!empty($db)) {
             			$this->_sqlRaw__create_temp_db ($db,$theResult['headers'],$theResult['rows'],$theResult['lengths']);
@@ -136,8 +154,11 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         			}
 			    }
 			    return true;
-			}
-			elseif (!empty($data['sql'])) {
+			} elseif (!empty($data['sql'])) {
+    			//
+    			// This pass thru we have already setup the temporary database table. 
+    			// So now process the supplied MySQL query on the temporary database table.
+    			//
 			    $db =& array_pop($this->databases);
 				if (!empty($db)) {
 					foreach ($data['sql'] as $query) {
@@ -147,10 +168,14 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 							$error = $result->getMessage();
 							$renderer->doc .= '<div class="error">'. $error .'</div>';
 							return TRUE;
-						}
-						elseif ($result == DB_OK or empty($result)) {
-						}
-						else {
+						} elseif ($result == DB_OK or empty($result)) {
+    						//
+    						// Do nothing
+    						//
+						} else {
+    						//
+    						// Display the result as a table
+    						//
             				$temp = array_keys($result[0]);
     						if ($this->tableId != ' ') {
         						$id_string = 'id="'.$this->tableId.'" ';
@@ -158,6 +183,9 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
          						$id_string = '';
          					}
 							if (! $this->vertical_position) {
+    							//
+    							// Display vertical table
+    							//
 								if ($this->display_inline) {
 									$renderer->doc .= '<table '.$id_string.'class="'.$this->table_class.'" style="display:inline">';
 								} else {
@@ -184,6 +212,9 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 								$renderer->doc .= '</tbody></table>';
 								$this->_sqlRaw__drop_temp_db ($db);
 							} else {
+    							//
+    							// Display horizontal table
+    							//
 								foreach ($result as $row) {
 									$renderer->doc .= '<table '.$id_string.'class="'.$this->table_class.'">';
 								    if ($this->title != '')
@@ -209,6 +240,14 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         return false;
     }
     
+    //
+    // Function: pullInWikiPage
+    // Purpose:  Read a dokuwiki page  
+    // Input:
+    //   $dokuPageId - the dokuwiki page id
+    // Returns:
+    //   $html - the rendered html for the page
+    //
     function _pullInWikiPage ($dokuPageId) {
         $file = wikiFN($dokuPageId);
         $data = io_readWikiPage($file, $dokuPageId, $rev=false);
@@ -216,6 +255,19 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         return $html;
     }
 
+    //
+    // Function: propertyRaw
+    // Purpose:  search a string for the parameter value  
+    // Input:
+    //   $prop - the parameter name
+    //   $xml  - the string to search
+    // Returns:
+    //   $match - the matched parameter value
+    //   false  - on no match found
+    // Notes
+    //   It will attempt the search looking for single or double quotes
+    //      surrounding the parameter value
+    //
     function _propertyRaw($prop, $xml) {
 	$pattern = $prop ."='([^']*)'";
 	if (ereg($pattern, $xml, $matches)) 
@@ -226,6 +278,23 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     return FALSE;
 }
 
+    //
+    // Function: scrapeTable
+    // Purpose:  Scrape a webpage to obtain only a specific table  
+    // Input:
+    //   $url            - the web page as either a url or a dokuwiki page id
+    //   $startMarker    - (optional) marker of text to start looking after for the table. 
+    //                     If null it will take the first table,
+    //   $dbfile         - (optional) A filepath and filename to write the table to as csv.
+    //                     If null the table is not saved to a file
+    //   $specialChars   - Character(s) that will not be allowed for column headings
+    //   $specialReplace - Character(s) that will replace the corresponding specialChar for column headiings
+    //   $restrictNames  - Boolean denotes if specialChars will be replaced (1=replace)
+    // Returns:
+    //   $csv_data - a string of the table in csv format containing only headings and cell content
+    //   false     - if a dokuwiki id was supplied and no data was obtained from that page
+    // Notes
+    //
     function _scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace, $restrictNames) {
     $csv_data = '';
     if(preg_match('/^(http|https)?:\/\//i',$url)){
@@ -273,6 +342,9 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     	if ($row_index == 0) 
     	  $numCols = $numHeadings;
 		  
+    	    //
+		    // clean the data by removing "+" and "," from numbers and
+		    //                   stripping html and php tags
 		$cell_index=0;
 		foreach ($cells[0] as $cell) {
             $test = strip_tags(trim(str_replace($numbs, "", $cell)));
@@ -295,6 +367,17 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     return $csv_data;
 }
 
+    //
+    // Function: strputcsv
+    // Purpose:  converts array elements into a csv string  
+    // Input:
+    //   $fields      - array of elements
+    //   $numheadings - number of column headings
+    //   $delimiter   - (optional) the delimiter to use. Defaults to a comma.
+    //   $enclosure   - (optional) the enclosure character to use. Defaults to a double quote.
+    // Returns:
+    //   $csvline - the csv string
+    //
     function _strputcsv($fields = array(), $numheadings, $delimiter = ',', $enclosure = '"') {
         $i = 0;
         $csvline = '';
@@ -346,22 +429,45 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         return $csvline;
     }
    
+    //
+    // Function: sqlRaw__handleLink
+    // Purpose:   
+    // Input:
+    //   $url           - url to csv or table
+    //   $source        - what is being processed a 'csvfile' or 'scrapeUrl'
+    //   $startMarker   - a marker of text to start looking for the next table (optional)
+    //   $dbfile        - debug file to write the csv to when scraping a table
+    //   $disallow      - Character(s) that will not be allowed for column headings
+    //   $use           - Character(s) that will replace the corresponding disallowed characters 
+    //   $restrictNames - Boolean denotes if disallow characters will be replaced (1=replace)
+    // Returns:
+    //   $myResult - multidimensional array of table headings, rows of data, and size of each cell
+    //   false on error
+    //
     function _sqlRaw__handleLink($url, $source='csvfile', $startMarker, $dbfile, $disallow, $use, $restrictNames){
         global $ID;
         $delim = ',';
         $opt = array('content' => '');
         if ($source == 'csvfile') {
+            //
+            // Process a csv file
+            //
             if(preg_match('/^(http|https)?:\/\//i',$url)){
-                // load file data
+                //
+                // load the csv file from an external website
+                //
                 $curl = new Curl_HTTP_Client();
                 $useragent = "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)";
                 $curl->set_user_agent($useragent);
                 $opt['content'] = $curl->fetch_url($url);
             } else {
+                //
+                // load the file from a local dokuwiki namespace
+                //
                 $opt['file'] = cleanID($url);
                 if(!strlen(getNS($opt['file'])))
                       $opt['file'] = $INFO['namespace'].':'.$opt['file'];
-                $renderer->info['cache'] = false; //no caching
+                $renderer->info['cache'] = false; 
                 if (auth_quickaclcheck(getNS($opt['file']).':*') < AUTH_READ) {
                     $renderer->cdata('Access denied to CSV data');
                     return true;
@@ -372,31 +478,42 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
                     if(!utf8_check($opt['content'])) $opt['content'] = utf8_encode($opt['content']);
                 }
             }
+            //
+            // if nothing there print error message and quit
+            //
             if(!$opt['content']){
                 printf("Failed to fetch remote CSV data.\n");
                 return true;
             }
             $content =& $opt['content'];
         } elseif ($source == 'scrapeUrl') {
+            //
+            // Scrape a Table
+            //
             $content =& $this->_scrapeTable(strtolower($url), $startMarker, $dbfile, $disallow, $use, $restrictNames);
             if ($content == false) {
                 msg("You do not have permission to access the requested page of ".$url."\n",-1);
                 return false;
             }
         } else {
+            //
+            // Neither is an error
+            //
             msg("No valid source url provided.\n");
             return false;
         }
-
+        //
         // clear any trailing or leading empty lines from the data set
+        //
         $content = preg_replace("/[\r\n]*$/","",$content);
         $content = preg_replace("/^\s*[\r\n]*/","",$content);
         if(!trim($content)){
             printf("No csv data found.\n");
             return false;
         }
-       
+        //
         // get each row
+        //
         $rows = array();
         $maxcol=0;
         $maxrow=0;
@@ -407,37 +524,57 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
           array_push($rows, $thisrow);
           $maxrow++;
         }
-        
+        //
         // process headers and determine max field sizes
+        //
         $row = 1;
         foreach($rows as $fields) {
     	  if ($row === 1) {
     		foreach ($fields as $field) {
-        		if ($restrictNames) $field = str_replace($disallow, $use, $field);
+        		if ($restrictNames) 
+        		    $field = str_replace($disallow, $use, $field);
     			$headers[] = strtolower(str_ireplace(' ', '_', $field));
     		}
 		  } else {
 			foreach ($fields as $key=>$value) {
-				if (!isset($max_field_lengths[$key])) {
+				if (!isset($max_field_lengths[$key]))
 					$max_field_lengths[$key] = 0;
-				}			
-				if (strlen($value) > $max_field_lengths[$key]) {
+				if (strlen($value) > $max_field_lengths[$key])
 					$max_field_lengths[$key] = strlen($value);
-				}
 				$field++;
 			}
 		  }
 		  $row++;
         }
+        //
+        // Set up return data as multidimensional array of headers, data and sizes
+        //
         $myResult['headers'] = $headers;
         $myResult['rows'] = $rows;
         $myResult['lengths'] = $max_field_lengths;
         return $myResult;
     }
     
-    // Explode CSV string, consuming it as we go
+    //
+    // Function: sqlRaw__csv_explode_row
+    // Purpose:  Explode CSV string, consuming it as we go 
+    // History:   
+    //   Dokuwiki CSV Plugin function csv_explode_row
+    // Author:
+    //   Steven Danz <steven-danz@kc.rr.com>
+    //   Andreas Gohr <gohr@cosmocode.de>
+    //   Jerry G. Geiger <JerryGeiger@web.de>
+    // Input:
+    //   $database - database identifier
+    // Returns:
+    //   $out - an array of the csv string elements
+    // Notes:
     // Careful, there could be both embedded newlines, commas and quotes
     // One thing to remember is that a row must end with a newline
+    //   RFC 4180 claims that a CSV is allowed to have a cell enclosed in ""
+    //     that embeds a newline. Convert those newlines to \\ (trying to keep
+    //     to the DokuWiki syntax) which we will key off of later in render()
+    //     as an embedded newline.    
     function _sqlRaw__csv_explode_row(&$str, $delim = ',', $qual = "\"") {
         $len = strlen($str);
         $inside = false;
@@ -469,9 +606,17 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         return $out;
     }
     
+    //
+    // Function: sqlRaw__drop_temp_db
+    // Purpose:  Drop a temporary database table 
+    // Input:
+    //   $database - database identifier
+    // Returns:
+    //   true on success
+    //   false on error
+    //
     function _sqlRaw__drop_temp_db($database) {
         $table = 'temptable';     
-        // Drop the table      
         $query = 'DROP TEMPORARY TABLE IF EXISTS '.$table;
         $result =& $database->query ($query);
         if (DB::isError ($result)) {
@@ -481,6 +626,18 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         return true;
     }
        
+    //
+    // Function: sqlRaw__create_temp_db
+    // Purpose:  Create a temporary database table 
+    // Input:
+    //   $database - database identifier
+    //   $headers  - array of column headings
+    //   $rows     - array of data records
+    //   $max_field_lengths - array of maximum field sizes
+    // Returns:
+    //   true on success
+    //   false on error
+    //
     function _sqlRaw__create_temp_db($database,$headers,$rows,$max_field_lengths) {
         $badChars = array(".", ":", "-");
         $table = 'temptable';
