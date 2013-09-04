@@ -27,9 +27,3 @@ GNU General Public License for more details.
 See the COPYING file in your DokuWiki folder for details
 
 ----
-
-curl_http_client.php
-
-Code available at phpclasses.org with BSD 2-Clause License
-http://opensource.org/licenses/bsd-license.html
-
