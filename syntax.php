@@ -394,8 +394,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         if ($raw == false) 
             return false;
     }
-    $newlines = array("\t","\n","\r","\x20\x20","\0","\x0B");
-    $spaceCodes = array("&nbsp;","<br />");
+    $newlines = array("\t","\n","\r","\x20\x20","\0","\x0B","<br />");
+    $spaceCodes = array("&nbsp;");
     $numberStuff = array(",","+");
     $numbs       = array(",",".","+","-","0","1","2","3","4","5","6","7","8","9");
 
