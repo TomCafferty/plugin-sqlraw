@@ -16,3 +16,5 @@ $conf['sqlraw_mysqlReplace'] = array (
   4 => '_'
   );
 $conf['sqlraw_restrict_names'] = 1;
+$conf['sqlraw_caption']  = 0;
+$conf['sqlraw_debugTableScrape'] = 0;

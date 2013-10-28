@@ -65,7 +65,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 			$class       = $this->_propertyRaw('class', $match);
 			$title       = $this->_propertyRaw('title', $match);			
 			$source      = $this->_propertyRaw('source', $match);				
-			return array('display' => $display, 'position' => $position, 'id' => $tableid, 'class' => $class, 'title' => $title, 'link' => $link, 'source' => $source, 'startMarker' => $startMarker);
+			$caption     = $this->_propertyRaw('caption', $match);				
+			return array('display' => $display, 'position' => $position, 'id' => $tableid, 'class' => $class, 'title' => $title, 'link' => $link, 'source' => $source, 'startMarker' => $startMarker, 'caption' => $caption);
             break;
           case DOKU_LEXER_UNMATCHED :
 			$queries = explode(';', $match);
@@ -107,6 +108,10 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 				$this->table_class = $data['class'];			
             if ($data['title'] != FALSE) 
 				$this->title = $data['title'];								
+			if (isset($data['caption'])) 
+			    $this->caption = $data['caption'];
+			else
+			    $this->caption = $this->getConf('sqlraw_caption');
 			if ($data['display'] == 'inline') {
 				$this->display_inline = TRUE;
 			} else if ($data['display'] == 'block') {
@@ -141,7 +146,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 				$disallow      = $this->getConf('sqlraw_mysqlDisallow');
 				$use           = $this->getConf('sqlraw_mysqlReplace');
 				$restrictNames = $this->getConf('sqlraw_restrict_names');
-    			$theResult = $this->_sqlRaw__handleLink($data['link'], &$renderer, $this->source, $this->startMarker, $debugfile, $disallow, $use, $restrictNames);
+    			$theResult = $this->_sqlRaw__handleLink($data['link'], &$renderer, $this->source, $this->startMarker, $debugfile, $disallow, $use, $restrictNames, $this->caption);
     			if ($theResult != "") {
         			//
         			// Good we have data, now retrieve the temporary database pointer and create a temporary table
@@ -258,7 +263,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   $myResult - multidimensional array of table headings, rows of data, and size of each cell
     //   false on error
     //
-    function _sqlRaw__handleLink($url, &$renderer, $source='csvfile', $startMarker, $dbfile, $disallow, $use, $restrictNames){
+    function _sqlRaw__handleLink($url, &$renderer, $source='csvfile', $startMarker, $dbfile, $disallow, $use, $restrictNames, $caption){
         global $ID;
         $delim = ',';
         $opt = array('content' => '');
@@ -302,7 +307,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
             //
             // Scrape a Table
             //
-            $content =& $this->_scrapeTable(strtolower($url), $startMarker, $dbfile, $disallow, $use, $restrictNames);
+            $content =& $this->_scrapeTable(strtolower($url), $startMarker, $dbfile, $disallow, $use, $restrictNames, $caption);
             if ($content == false) {
                 msg("You do not have permission to access the requested page of ".$url."\n",-1);
                 return false;
@@ -365,6 +370,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         $myResult['headers'] = $headers;
         $myResult['rows'] = $rows;
         $myResult['lengths'] = $max_field_lengths;
+
         return $myResult;
     }
 
@@ -385,7 +391,10 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   false     - if a dokuwiki id was supplied and no data was obtained from that page
     // Notes
     //
-    function _scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace, $restrictNames) {
+    function _scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace, $restrictNames, $caption) {
+    global $conf;
+	$debugTable      = $this->getConf('sqlraw_debugTableScrape');
+    
     $csv_data = '';
     if(preg_match('/^(http|https)?:\/\//i',$url)){
         $raw = file_get_contents($url);
@@ -420,12 +429,18 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     $end = strpos($content,'</table>',$start) + 8;
     $table = substr($content,$start,$end-$start);
    
+    // Fix table errors
+    if ($debugTable == 1)
+        $table = $this->_fixTable($table);
+   
     // Pull out the rows
     preg_match_all("|<tr(.*)</tr>|U",$table,$rows);
     
     $row_index=0;
     $numHeadings = 0;
     foreach ($rows[0] as $row){
+	  $newCells = false;
+      if ($row_index!=0 || $caption==0) {
             
         if ($restrictNames && ($row_index==0))
             // 
@@ -433,18 +448,23 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
             //
             $row = str_replace($specialChars, $specialReplace, $row);
                 
-        if (strpos($row,'<th')===false)  
+        if (strpos($row,'<th')===false)  {
           //
           // pull out the cells 
           // 
           preg_match_all("|<td(.*)</td>|U",$row,$cells);
+		  $newCells = true;
+        }
         else 
           //
           // pull out the cells and count the number of them
           // 
-		  $numHeadings = preg_match_all("|<t(.*)</t(.*)>|U",$row,$cells);
+          if ( $numHeadings == 0) {
+		      $numHeadings = preg_match_all("|<t(.*)</t(.*)>|U",$row,$cells);
+		      $newCells = true;
+	      }
 		        
-    	if ($row_index == 0) 
+    	if (($row_index == 0) || ($row_index == 1 && $caption==1)) 
     	  //
     	  // the 1st row gives the number of columns
     	  // 
@@ -453,6 +473,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     	//
     	// store the cells by [row][cell] after you clean it
 		//  
+		if ($newCells === true) {
 		$cell_index=0;
 		foreach ($cells[0] as $cell) {
             $test = strip_tags(trim(str_replace($numbs, "", $cell)));
@@ -463,15 +484,19 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     		  $cell = str_replace($numberStuff, '', $cell);
     		//
     		// strip html and php tags
-    		//    
-    		$mycells[$row_index][$cell_index] = trim(strip_tags($cell));
-    		++$cell_index;
-    	}
+    		//    (Test for table error of too many cells)
+    	    if ($cell_index < $numHeadings) {
+    		  $mycells[$row_index][$cell_index] = trim(strip_tags($cell));
+    		  ++$cell_index;
+    	    }
+    	  }
+	    }
     	    
     	if ($mycells[$row_index] != '') {
         	if ($debug == TRUE) 
         	  fputcsv($fp, $mycells[$row_index]);
         	$csv_data .= $this->_strputcsv($mycells[$row_index], $numCols-1);
+        }
         }
         //
         // repeat for each row
@@ -486,6 +511,34 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //
     // The rest are helper functions
     //
+    
+    //
+    // Function: fixTable
+    // Purpose:  Correct errors in table if possible  
+    // Input:
+    //   $tableIn - input table
+    // Returns:
+    //   $tableIn - fixed table
+    //
+    function _fixTable ($tableIn) {
+        $length = strlen ($tableIn);
+        $pos = 0;
+        while($pos <= $length-1) {
+            $tdPosOpen     = stripos($tableIn, '<td', $pos);
+            $tdPosClose    = stripos($tableIn, '</td>',$tdPosOpen+4);
+            $tdPosOpenNext = stripos($tableIn, '<td', $tdPosOpen+4);
+            if ($tdPosOpenNext < $pos) {
+                $pos = $length;
+            } else {
+                if ($tdPosOpenNext !== false && $tdPosOpenNext < $tdPosClose) {
+                    $tableIn = substr_replace($tableIn, '</td>', $tdPosOpenNext-1, 0); 
+                    $length += 5;
+                }
+                $pos = $tdPosClose+5;
+            }
+        }   
+        return $tableIn;
+    }
     
     //
     // Function: pullInWikiPage
@@ -671,11 +724,12 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   false on error
     //
     function _sqlRaw__create_temp_db($database, $headers, $rows, $max_field_lengths, &$renderer) {
-        $badChars = array(".", ":", "-");
+        $badChars = array(".", ":", "-","/");
         $table = 'temptable';
         
         // Create the table      
         $query = 'CREATE TEMPORARY TABLE '.$table . ' (';
+        
         foreach ($headers as $key=>$header) {
             $query .= str_replace($badChars,'_',trim($header)).' VARCHAR('.$max_field_lengths[$key].') NOT NULL, ';
         }
