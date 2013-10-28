@@ -1,5 +1,5 @@
 <?php
-$conf['sqlraw_debugfilepath'] = 'sqlraw.csv';
+$conf['sqlraw_debugfilepath'] = '';
 $conf['sqlraw_tempdb'] = 'mysql://user:password@hostname/database';
 $conf['sqlraw_mysqlDisallow'] = array (
   0 => '%',
@@ -16,5 +16,3 @@ $conf['sqlraw_mysqlReplace'] = array (
   4 => '_'
   );
 $conf['sqlraw_restrict_names'] = 1;
-$conf['sqlraw_caption']  = 0;
-$conf['sqlraw_debugTableScrape'] = 0;

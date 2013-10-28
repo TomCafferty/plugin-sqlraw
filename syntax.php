@@ -59,6 +59,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
           case DOKU_LEXER_ENTER : 
 			$link        = $this->_propertyRaw('link',$match);
 			$startMarker = $this->_propertyRaw('startMarker',$match);
+			$tableNumber = $this->_propertyRaw('tableNumber',$match);
 			$display     = $this->_propertyRaw('display', $match);
 			$position    = $this->_propertyRaw('position', $match);
 			$tableid     = $this->_propertyRaw('id', $match);					
@@ -66,7 +67,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 			$title       = $this->_propertyRaw('title', $match);			
 			$source      = $this->_propertyRaw('source', $match);				
 			$caption     = $this->_propertyRaw('caption', $match);				
-			return array('display' => $display, 'position' => $position, 'id' => $tableid, 'class' => $class, 'title' => $title, 'link' => $link, 'source' => $source, 'startMarker' => $startMarker, 'caption' => $caption);
+			$fixTable    = $this->_propertyRaw('fixTable', $match);				
+			return array('display' => $display, 'position' => $position, 'id' => $tableid, 'class' => $class, 'title' => $title, 'link' => $link, 'source' => $source, 'startMarker' => $startMarker, 'tableNumber' => $tableNumber, 'caption' => $caption, 'fixTable' => $fixTable);
             break;
           case DOKU_LEXER_UNMATCHED :
 			$queries = explode(';', $match);
@@ -81,7 +83,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 			$this->table_class = 'inline';
 			$this->source = '';
 			$this->startMarker = '';
-			return array('display' => 'block', 'position' => 'horizontal', 'class' => 'inline', 'id' => ' ', 'source' => ' ', 'startMarker' => '');
+			$this->tableNumber = 1;
+			return array('display' => 'block', 'position' => 'horizontal', 'class' => 'inline', 'id' => ' ', 'source' => ' ', 'startMarker' => '', 'tableNumber' => 1);
             break;
         }
         return array();
@@ -104,6 +107,10 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 				$this->source = $data['source'];			
             if ($data['startMarker'] != FALSE) 
 				$this->startMarker = $data['startMarker'];			
+            if ($data['tableNumber'] != FALSE) 
+                $this->tableNumber = $data['tableNumber'];
+			else
+				$this->tableNumber = 1;
            if ($data['class'] != FALSE) 
 				$this->table_class = $data['class'];			
             if ($data['title'] != FALSE) 
@@ -111,7 +118,11 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 			if (isset($data['caption'])) 
 			    $this->caption = $data['caption'];
 			else
-			    $this->caption = $this->getConf('sqlraw_caption');
+			    $this->caption = 0;
+			if (isset($data['fixTable'])) 
+			    $this->fixTable = $data['fixTable'];
+			else
+			    $this->fixTable = 0;
 			if ($data['display'] == 'inline') {
 				$this->display_inline = TRUE;
 			} else if ($data['display'] == 'block') {
@@ -146,7 +157,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 				$disallow      = $this->getConf('sqlraw_mysqlDisallow');
 				$use           = $this->getConf('sqlraw_mysqlReplace');
 				$restrictNames = $this->getConf('sqlraw_restrict_names');
-    			$theResult = $this->_sqlRaw__handleLink($data['link'], &$renderer, $this->source, $this->startMarker, $debugfile, $disallow, $use, $restrictNames, $this->caption);
+    			$theResult = $this->_sqlRaw__handleLink($data['link'], &$renderer, $this->source, $this->startMarker, $this->tableNumber, $debugfile, $disallow, $use, $restrictNames, $this->caption, $this->fixTable);
     			if ($theResult != "") {
         			//
         			// Good we have data, now retrieve the temporary database pointer and create a temporary table
@@ -255,6 +266,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   $url           - url to csv or table
     //   $source        - what is being processed a 'csvfile' or 'scrapeUrl'
     //   $startMarker   - a marker of text to start looking for the next table (optional)
+    //   $tableNumber   - the number of the table to scrape on a page (eg 1,2,3...) (optional)
     //   $dbfile        - debug file to write the csv to when scraping a table
     //   $disallow      - Character(s) that will not be allowed for column headings
     //   $use           - Character(s) that will replace the corresponding disallowed characters 
@@ -263,7 +275,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   $myResult - multidimensional array of table headings, rows of data, and size of each cell
     //   false on error
     //
-    function _sqlRaw__handleLink($url, &$renderer, $source='csvfile', $startMarker, $dbfile, $disallow, $use, $restrictNames, $caption){
+    function _sqlRaw__handleLink($url, &$renderer, $source='csvfile', $startMarker, $tableNumber, $dbfile, $disallow, $use, $restrictNames, $caption, $fixTable){
         global $ID;
         $delim = ',';
         $opt = array('content' => '');
@@ -307,7 +319,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
             //
             // Scrape a Table
             //
-            $content =& $this->_scrapeTable(strtolower($url), $startMarker, $dbfile, $disallow, $use, $restrictNames, $caption);
+            $content =& $this->_scrapeTable(strtolower($url), $startMarker,  $tableNumber, $dbfile, $disallow, $use, $restrictNames, $caption, $fixTable);
             if ($content == false) {
                 msg("You do not have permission to access the requested page of ".$url."\n",-1);
                 return false;
@@ -381,6 +393,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   $url            - the web page as either a url or a dokuwiki page id
     //   $startMarker    - (optional) marker of text to start looking after for the table. 
     //                     If null it will take the first table,
+    //   $tableNumber    - (optional) the table number to scrape. 
+    //                     If null it will take the first table,
     //   $dbfile         - (optional) A filepath and filename to write the table to as csv.
     //                     If null the table is not saved to a file
     //   $specialChars   - Character(s) that will not be allowed for column headings
@@ -391,9 +405,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   false     - if a dokuwiki id was supplied and no data was obtained from that page
     // Notes
     //
-    function _scrapeTable($url, $startMarker, $dbfile, $specialChars, $specialReplace, $restrictNames, $caption) {
-    global $conf;
-	$debugTable      = $this->getConf('sqlraw_debugTableScrape');
+    function _scrapeTable($url, $startMarker, $tableNumber, $dbfile, $specialChars, $specialReplace, $restrictNames, $caption, $fixTable) {
     
     $csv_data = '';
     if(preg_match('/^(http|https)?:\/\//i',$url)){
@@ -424,13 +436,16 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         $content = substr($content,$start);
     }
 
+    $end = 0;
+    for ($x = 1; $x <= $tableNumber; $x++) {
     // Pull out the table
-    $start = strpos($content,'<table ');
+        $start = strpos($content,'<table ', $end);
     $end = strpos($content,'</table>',$start) + 8;
     $table = substr($content,$start,$end-$start);
+    }
    
     // Fix table errors
-    if ($debugTable == 1)
+    if ($fixTable == 1)
         $table = $this->_fixTable($table);
    
     // Pull out the rows
