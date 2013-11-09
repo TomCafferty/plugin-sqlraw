@@ -219,14 +219,16 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 									$renderer->doc .= '</th>';
 								}
 								$renderer->doc .= "</tr>\n";
+								$count=1;
 								foreach ($result as $row) {
-									$renderer->doc .= '<tr>';
+									$renderer->doc .= '<tr class="row'.$count.'">';
 									foreach ($row as $cell) {
 										$renderer->doc .= '<td>';
 										$renderer->cdata($cell);
 										$renderer->doc .= '</td>';
 									}
 									$renderer->doc .= "</tr>\n";
+									if ($this->table_class != "sortable") $count++;
 								}
 								$renderer->doc .= '</tbody></table>';
 								$this->_sqlRaw__drop_temp_db ($db, &$renderer);
