@@ -15,6 +15,7 @@ if(!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN',DOKU_INC.'lib/plugins/');
 require_once(DOKU_PLUGIN.'syntax.php');
 require_once(DOKU_INC.'inc/parserutils.php');
 require_once('DB.php');
+require_once('simple_html_dom.php');
      
 /**
  * All DokuWiki plugins to extend the parser/rendering mechanism
@@ -25,6 +26,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 	var $display_inline = FALSE;
 	var $vertical_position = FALSE;
 	var $table_class = 'inline';
+    var $colCount = 0;
 
     /**
      * What kind of syntax are we?
@@ -323,7 +325,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
             //
             $content =& $this->_scrapeTable(strtolower($url), $startMarker,  $tableNumber, $dbfile, $disallow, $use, $restrictNames, $caption, $fixTable);
             if ($content == false) {
-                msg("You do not have permission to access the requested page of ".$url."\n",-1);
+                msg("No data for the requested page of ".$url."\n",-1);
                 return false;
             }
             
@@ -339,7 +341,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         //
         $content = preg_replace("/[\r\n]*$/","",$content);
         $content = preg_replace("/^\s*[\r\n]*/","",$content);
-        if(!trim($content)){
+        $content = trim($content,' ,');
+        if($content == "") {
             printf("No csv data found.\n");
             return false;
         }
@@ -408,6 +411,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     // Notes
     //
     function _scrapeTable($url, $startMarker, $tableNumber, $dbfile, $specialChars, $specialReplace, $restrictNames, $caption, $fixTable) {
+    require_once('test2.php');
     
     $csv_data = '';
     if(preg_match('/^(http|https)?:\/\//i',$url)){
@@ -446,9 +450,17 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     $table = substr($content,$start,$end-$start);
     }
    
+    $table = $this->_fixTable($table);
     // Fix table errors
-    if ($fixTable == 1)
-        $table = $this->_fixTable($table);
+    if ($fixTable == 1){
+//        $table = $this->_fixTable($table);
+        $mdTable = table2csv($table,'tom.csv',false, $caption);
+        foreach ($mdTable as $key => $row) {
+        	if ($debug == TRUE) 
+        	  fputcsv($fp, $mdTable[$key]);
+        	$csv_data .= $this->_strputcsv($row, $colCount-1);
+        }
+    } else {
    
     // Pull out the rows
     preg_match_all("|<tr(.*)</tr>|U",$table,$rows);
@@ -508,7 +520,6 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     	    }
     	  }
 	    }
-    	    
     	if ($mycells[$row_index] != '') {
         	if ($debug == TRUE) 
         	  fputcsv($fp, $mycells[$row_index]);
@@ -522,6 +533,10 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     }
     if ($debug == TRUE) 
       fclose($fp);
+   }
+   $csv_data = trim($csv_data,' ,');
+   $csv_data = strip_tags($csv_data);
+
     return $csv_data;
 }
     
@@ -538,6 +553,9 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   $tableIn - fixed table
     //
     function _fixTable ($tableIn) {
+        global $colCount;
+        
+        // Add missing </td>s
         $length = strlen ($tableIn);
         $pos = 0;
         while($pos <= $length-1) {
@@ -554,9 +572,21 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
                 $pos = $tdPosClose+5;
             }
         }   
+        
+        // Get the column count
+        // we have to iterate through the rows and pull out the max found
+        $html = str_get_html(trim($tableIn));
+        foreach ($html->find('tr') as $element) {
+            $tempColCount = 0;
+            foreach ($element->find('th') as $cell) {
+                $tempColCount++;
+            }
+            if ($tempColCount > $colCount) $colCount = $tempColCount;
+        }
         return $tableIn;
     }
     
+       
     //
     // Function: pullInWikiPage
     // Purpose:  Read a dokuwiki page  
@@ -741,6 +771,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   false on error
     //
     function _sqlRaw__create_temp_db($database, $headers, $rows, $max_field_lengths, &$renderer) {
+        global $colCount;
         $badChars = array(".", ":", "-","/");
         $table = 'temptable';
         
@@ -748,7 +779,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         $query = 'CREATE TEMPORARY TABLE '.$table . ' (';
         
         foreach ($headers as $key=>$header) {
-            $query .= str_replace($badChars,'_',trim($header)).' VARCHAR('.$max_field_lengths[$key].') NOT NULL, ';
+            if ($header != "")
+            $query .= str_replace($badChars,'_',trim($header)).' VARCHAR('.$max_field_lengths[$key].'), ';
         }
         $query = rtrim($query,', ');
         $query .= ') DEFAULT CHARACTER SET \'utf8\'';
@@ -762,9 +794,14 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         $row = 1;
         foreach($rows as $fields) {
     	  if ($row !== 1) {
+        	if ($this->caption==0 || ($this->caption==1 && $row > 2)) {
 			$sql = 'INSERT INTO `'.$table.'` VALUES(';
+            $col_index=0;
 			foreach ($fields as $field) {
+              if ($col_index < $colCount) {
 				$sql .= '\''.$database->escapeSimple($field).'\', ';
+				$col_index++ ;
+	          }
 	        }
 			$sql = rtrim($sql, ', ');
 			$sql .= ');';
@@ -774,6 +811,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 			    return false;
 			}
 		  }
+	  }
 		  $row++;
 		}
 		return true;
