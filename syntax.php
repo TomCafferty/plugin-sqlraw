@@ -341,7 +341,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         //
         $content = preg_replace("/[\r\n]*$/","",$content);
         $content = preg_replace("/^\s*[\r\n]*/","",$content);
-        $content = trim($content,' ,');
+//        $content = trim($content,' ,');
         if($content == "") {
             printf("No csv data found.\n");
             return false;
@@ -534,7 +534,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     if ($debug == TRUE) 
       fclose($fp);
    }
-   $csv_data = trim($csv_data,' ,');
+//   $csv_data = trim($csv_data,' ,');
    $csv_data = strip_tags($csv_data);
 
     return $csv_data;
