@@ -97,6 +97,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
      */
     function render($mode, &$renderer, $data) {
         global $conf;
+        global $db;
 
 		$renderer->info['cache'] = false;
         if($mode == 'xhtml'){		
@@ -188,6 +189,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 						if (DB::isError($result)) {
 							$error = $result->getMessage();
 							$renderer->doc .= '<div class="error">'. $error .'</div>';
+			                $db->disconnect();
 							return TRUE;
 						} elseif ($result == DB_OK or empty($result)) {
     						//
@@ -258,6 +260,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 					}
 				}
 			}
+			$db->disconnect();
             return true;
         }
         return false;
@@ -265,7 +268,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
    
     //
     // Function: sqlRaw__handleLink
-    // Purpose:   
+    // Purpose:  Determine where the data will come from and process 
     // Input:
     //   $url           - url to csv or table
     //   $source        - what is being processed a 'csvfile' or 'scrapeUrl'
@@ -341,7 +344,6 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         //
         $content = preg_replace("/[\r\n]*$/","",$content);
         $content = preg_replace("/^\s*[\r\n]*/","",$content);
-//        $content = trim($content,' ,');
         if($content == "") {
             printf("No csv data found.\n");
             return false;
@@ -412,6 +414,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //
     function _scrapeTable($url, $startMarker, $tableNumber, $dbfile, $specialChars, $specialReplace, $restrictNames, $caption, $fixTable) {
     require_once('test2.php');
+    global $colCount;
     
     $csv_data = '';
     if(preg_match('/^(http|https)?:\/\//i',$url)){
@@ -447,21 +450,25 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     // Pull out the table
         $start = strpos($content,'<table ', $end);
     $end = strpos($content,'</table>',$start) + 8;
+    $table = '';
     $table = substr($content,$start,$end-$start);
     }
    
+    // Get column count and fix any missing </td>s
     $table = $this->_fixTable($table);
-    // Fix table errors
+    
+    // Handle row/col spans and captions
     if ($fixTable == 1){
-//        $table = $this->_fixTable($table);
         $mdTable = table2csv($table,'tom.csv',false, $caption);
         foreach ($mdTable as $key => $row) {
+            //clean the data
+            array_walk($mdTable[$key], "cleanCell");
         	if ($debug == TRUE) 
         	  fputcsv($fp, $mdTable[$key]);
         	$csv_data .= $this->_strputcsv($row, $colCount-1);
         }
     } else {
-   
+      // Simple table
     // Pull out the rows
     preg_match_all("|<tr(.*)</tr>|U",$table,$rows);
     
@@ -534,9 +541,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     if ($debug == TRUE) 
       fclose($fp);
    }
-//   $csv_data = trim($csv_data,' ,');
    $csv_data = strip_tags($csv_data);
-
+   $csv_data = ltrim($csv_data, " ,");
     return $csv_data;
 }
     
@@ -554,6 +560,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //
     function _fixTable ($tableIn) {
         global $colCount;
+        $tempColCount = 0;
+        $colCount = 0;
         
         // Add missing </td>s
         $length = strlen ($tableIn);
@@ -753,6 +761,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         $result =& $database->query ($query);
         if (DB::isError ($result)) {
 			$renderer->doc .= '<div class="error">DROP TABLE failed for query: '. $query .'the error: '. $result->getMessage() .'</div>';
+			$db->disconnect();
             return false;
         }
         return true;
@@ -772,6 +781,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //
     function _sqlRaw__create_temp_db($database, $headers, $rows, $max_field_lengths, &$renderer) {
         global $colCount;
+        global $db;
         $badChars = array(".", ":", "-","/");
         $table = 'temptable';
         
@@ -787,6 +797,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         $result =& $database->query ($query);
         if (DB::isError ($result)) {
 			$renderer->doc .= '<div class="error">CREATE TABLE failed for query: '. $query .'the error: '. $result->getMessage() .'</div>';
+			$db->disconnect();
             return false;
         }
         
@@ -808,6 +819,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 			$result =& $database->query ($sql);
 			if (DB::isError ($result)) {
 			    $renderer->doc .= '<div class="error">INSERT INTO TABLE failed for query: '. $sql .'the error: '. $result->getMessage() .'</div>';
+			    $db->disconnect();
 			    return false;
 			}
 		  }
