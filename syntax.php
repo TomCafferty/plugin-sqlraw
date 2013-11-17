@@ -183,8 +183,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     			//
 			    $db =& array_pop($this->databases);
 				if (!empty($db)) {
+					$db->setFetchMode(DB_FETCHMODE_ASSOC);
 					foreach ($data['sql'] as $query) {
-						$db->setFetchMode(DB_FETCHMODE_ASSOC);
 						$result =& $db->getAll($query);
 						if (DB::isError($result)) {
 							$error = $result->getMessage();
@@ -282,18 +282,16 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     //   $myResult - multidimensional array of table headings, rows of data, and size of each cell
     //   false on error
     //
-    function _sqlRaw__handleLink($url, &$renderer, $source='csvfile', $startMarker, $tableNumber, $dbfile, $disallow, $use, $restrictNames, $caption, $fixTable){
+    function _sqlRaw__handleLink($url, &$renderer, $source, $startMarker, $tableNumber, $dbfile, $disallow, $use, $restrictNames, $caption, $fixTable){
         global $ID;
+        global $colCount;
         $delim = ',';
         $opt = array('content' => '');
         if ($source == 'csvfile') {
             //
             // Process a csv file
             //
-            if(preg_match('/^(http|https)?:\/\//i',$url)){
-                //
-                // load the csv file from an external website
-                //
+            if(strpos($url, 'http') !==false) {
                 $http = new DokuHTTPClient();
                 $opt['content'] = $http->get($url);
             } else {
@@ -318,7 +316,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
             //
             if(!$opt['content']){
                 printf("Failed to fetch remote CSV data.\n");
-                return true;
+                return false;
             }
             $content =& $opt['content'];
             
@@ -367,10 +365,12 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         $row = 1;
         foreach($rows as $fields) {
     	  if ($row === 1) {
+            $colCount=0;
     		foreach ($fields as $field) {
         		if ($restrictNames) 
         		    $field = str_replace($disallow, $use, $field);
     			$headers[] = strtolower(str_ireplace(' ', '_', $field));
+    			$colCount++;
     		}
 		  } else {
 			foreach ($fields as $key=>$value) {
@@ -378,6 +378,8 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 					$max_field_lengths[$key] = 0;
 				if (strlen($value) > $max_field_lengths[$key])
 					$max_field_lengths[$key] = strlen($value);
+				if ($max_field_lengths[$key] == 0)
+					$max_field_lengths[$key] = 1;			
 				$field++;
 			}
 		  }
@@ -389,7 +391,6 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         $myResult['headers'] = $headers;
         $myResult['rows'] = $rows;
         $myResult['lengths'] = $max_field_lengths;
-
         return $myResult;
     }
 
@@ -505,6 +506,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     	  // the 1st row gives the number of columns
     	  // 
     	  $numCols = $numHeadings;
+    	      $numCols = $colCount;
 		  
     	//
     	// store the cells by [row][cell] after you clean it
@@ -797,7 +799,6 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
         $result =& $database->query ($query);
         if (DB::isError ($result)) {
 			$renderer->doc .= '<div class="error">CREATE TABLE failed for query: '. $query .'the error: '. $result->getMessage() .'</div>';
-			$db->disconnect();
             return false;
         }
         
