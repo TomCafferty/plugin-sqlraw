@@ -260,7 +260,6 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
 					}
 				}
 			}
-			$db->disconnect();
             return true;
         }
         return false;
