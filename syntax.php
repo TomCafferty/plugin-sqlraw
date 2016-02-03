@@ -56,7 +56,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     /**
      * Handle the match
      */
-    function handle($match, $state, $pos, &$handler){
+    function handle($match, $state, $pos, Doku_Handler $handler){
         switch ($state) {
           case DOKU_LEXER_ENTER : 
 			$link        = $this->_propertyRaw('link',$match);
@@ -95,7 +95,7 @@ class syntax_plugin_sqlraw extends DokuWiki_Syntax_Plugin {
     /**
      * Create output
      */
-    function render($mode, &$renderer, $data) {
+    function render($mode, Doku_Renderer $renderer, $data) {
         global $conf;
         global $db;
 
